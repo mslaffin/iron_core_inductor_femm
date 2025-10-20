@@ -1,0 +1,4 @@
+pyfemm==0.1.3
+ezdxf>=1.0.0
+numpy>=1.21.0
+matplotlib>=3.5.0
