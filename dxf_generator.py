@@ -41,16 +41,20 @@ class DXFGenerator:
         self.msp = self.doc.modelspace()
         
     def calculate_wire_positions(self) -> List[Tuple[float, float]]:
-        """Calculate wire positions with hexagonal close packing"""
+        """Calculate wire positions with hexagonal close packing and small gap"""
         positions = []
 
-        # Hexagonal packing parameters
+        # Gap factor: adds space between wires for easier material assignment
+        # 1.0 = touching, 1.05 = 5% gap, 1.1 = 10% gap
+        gap_factor = 1.01
+
+        # Hexagonal packing parameters with gap
         # Axial (vertical) spacing between rows
-        axial_pitch = self.config.wire_diameter
-        # Radial (horizontal) spacing between layers
-        radial_pitch = self.config.wire_diameter * 0.866  # sqrt(3)/2 for hex packing
+        axial_pitch = self.config.wire_diameter * gap_factor
+        # Radial (horizontal) spacing between layers (sqrt(3)/2 for hex packing)
+        radial_pitch = self.config.wire_diameter * 0.866 * gap_factor
         # Vertical offset for alternating layers (half wire diameter)
-        hex_offset = self.config.wire_diameter / 2
+        hex_offset = self.config.wire_diameter * gap_factor / 2
 
         # Calculate available winding area
         radial_space = self.config.winding_outer_radius - self.config.winding_inner_radius
@@ -184,7 +188,7 @@ class DXFGenerator:
         self.add_air_boundary()
         self.add_iron_core()
         self.add_wire_cross_sections()
-        self.add_construction_lines()
+        # self.add_construction_lines()  # Commented out - causes issues in FEMM
 
         self.doc.saveas(filename)
         print(f"DXF file saved as: {filename}")
@@ -207,10 +211,10 @@ def create_sample_inductor():
         core_inner_radius=0.0,       # Solid rod (no hole)
         core_height=30.0,            # Rod length
         wire_diameter=1.29,
-        num_turns=160,
+        num_turns=264,
         wire_layers=9,
         winding_inner_radius=8.55,      # Just outside the core
-        winding_outer_radius=16.0,    # Outer edge of windings
+        winding_outer_radius=32.0,    # Outer edge of windings
         winding_height=29.0,
         air_gap_radius=50.0
     )

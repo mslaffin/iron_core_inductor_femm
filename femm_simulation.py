@@ -137,77 +137,115 @@ class FEMMSimulation:
         print(f"Geometry imported from {dxf_filename}")
         
     def create_geometry_programmatically(self):
-        """Create geometry directly in FEMM (alternative to DXF import)"""
-        # Air boundary
-        femm.mi_addnode(-self.config.air_gap_radius, -self.config.air_gap_radius)
-        femm.mi_addnode(self.config.air_gap_radius, -self.config.air_gap_radius)
-        femm.mi_addnode(self.config.air_gap_radius, self.config.air_gap_radius)
-        femm.mi_addnode(-self.config.air_gap_radius, self.config.air_gap_radius)
-        
-        # Create air boundary rectangle
-        femm.mi_addsegment(-self.config.air_gap_radius, -self.config.air_gap_radius,
-                          self.config.air_gap_radius, -self.config.air_gap_radius)
-        femm.mi_addsegment(self.config.air_gap_radius, -self.config.air_gap_radius,
-                          self.config.air_gap_radius, self.config.air_gap_radius)
-        femm.mi_addsegment(self.config.air_gap_radius, self.config.air_gap_radius,
-                          -self.config.air_gap_radius, self.config.air_gap_radius)
-        femm.mi_addsegment(-self.config.air_gap_radius, self.config.air_gap_radius,
-                          -self.config.air_gap_radius, -self.config.air_gap_radius)
-        
-        # Iron core outer circle
-        femm.mi_drawcircle(0, 0, self.config.core_outer_radius)
-        
-        # Iron core inner circle (air gap)
-        femm.mi_drawcircle(0, 0, self.config.core_inner_radius)
-        
-        # Add wire positions
+        """Create axisymmetric solenoid geometry directly in FEMM"""
+        half_height_air = self.config.air_gap_radius
+        half_height_core = self.config.core_height / 2
+
+        # Air boundary rectangle (r=0 to air_gap_radius, z=-half_height to +half_height)
+        femm.mi_addnode(0, -half_height_air)
+        femm.mi_addnode(self.config.air_gap_radius, -half_height_air)
+        femm.mi_addnode(self.config.air_gap_radius, half_height_air)
+        femm.mi_addnode(0, half_height_air)
+
+        femm.mi_addsegment(0, -half_height_air, self.config.air_gap_radius, -half_height_air)
+        femm.mi_addsegment(self.config.air_gap_radius, -half_height_air, self.config.air_gap_radius, half_height_air)
+        femm.mi_addsegment(self.config.air_gap_radius, half_height_air, 0, half_height_air)
+        femm.mi_addsegment(0, half_height_air, 0, -half_height_air)
+
+        # Iron core rectangle (solid rod from r=0 to core_outer_radius)
+        if self.config.core_inner_radius > 0:
+            # Hollow core
+            femm.mi_addnode(self.config.core_inner_radius, -half_height_core)
+            femm.mi_addnode(self.config.core_outer_radius, -half_height_core)
+            femm.mi_addnode(self.config.core_outer_radius, half_height_core)
+            femm.mi_addnode(self.config.core_inner_radius, half_height_core)
+
+            femm.mi_addsegment(self.config.core_inner_radius, -half_height_core, self.config.core_outer_radius, -half_height_core)
+            femm.mi_addsegment(self.config.core_outer_radius, -half_height_core, self.config.core_outer_radius, half_height_core)
+            femm.mi_addsegment(self.config.core_outer_radius, half_height_core, self.config.core_inner_radius, half_height_core)
+            femm.mi_addsegment(self.config.core_inner_radius, half_height_core, self.config.core_inner_radius, -half_height_core)
+        else:
+            # Solid core (rod from r=0)
+            femm.mi_addnode(0, -half_height_core)
+            femm.mi_addnode(self.config.core_outer_radius, -half_height_core)
+            femm.mi_addnode(self.config.core_outer_radius, half_height_core)
+            femm.mi_addnode(0, half_height_core)
+
+            femm.mi_addsegment(0, -half_height_core, self.config.core_outer_radius, -half_height_core)
+            femm.mi_addsegment(self.config.core_outer_radius, -half_height_core, self.config.core_outer_radius, half_height_core)
+            femm.mi_addsegment(self.config.core_outer_radius, half_height_core, 0, half_height_core)
+            femm.mi_addsegment(0, half_height_core, 0, -half_height_core)
+
+        # Add individual wire circles
         from dxf_generator import DXFGenerator
         generator = DXFGenerator(self.config)
         wire_positions = generator.calculate_wire_positions()
-        
-        for x, y in wire_positions:
-            femm.mi_drawcircle(x, y, self.config.wire_diameter / 2)
-            
-        print("Geometry created programmatically")
+
+        for r, z in wire_positions:
+            femm.mi_drawcircle(r, z, self.config.wire_diameter / 2)
+
+        print(f"Axisymmetric geometry created: {len(wire_positions)} wires")
         
     def assign_block_properties(self):
         """Assign material properties to regions"""
-        # Assign air to outer region
-        femm.mi_addblocklabel(self.config.air_gap_radius * 0.9, 0)
-        femm.mi_selectlabel(self.config.air_gap_radius * 0.9, 0)
+        print("Assigning block properties...")
+
+        # Assign iron to core region FIRST (most important)
+        if self.config.core_inner_radius > 0:
+            # Hollow core - assign iron to annular region
+            core_radius = (self.config.core_outer_radius + self.config.core_inner_radius) / 2
+            core_z = 0  # Center of core
+            print(f"  Adding iron core label at r={core_radius}, z={core_z} (hollow)")
+            femm.mi_addblocklabel(core_radius, core_z)
+            femm.mi_selectlabel(core_radius, core_z)
+            femm.mi_setblockprop('Iron_Core', 1, 0, '', 0, 0, 0)
+            femm.mi_clearselected()
+
+            # Assign air to inner core region (this is a separate region)
+            inner_air_radius = self.config.core_inner_radius * 0.5
+            print(f"  Adding inner air label at r={inner_air_radius}, z=0")
+            femm.mi_addblocklabel(inner_air_radius, 0)
+            femm.mi_selectlabel(inner_air_radius, 0)
+            femm.mi_setblockprop('Air', 1, 0, '', 0, 0, 0)
+            femm.mi_clearselected()
+        else:
+            # Solid core - assign iron from axis to outer radius
+            # Place label well inside the core region
+            core_radius = self.config.core_outer_radius * 0.5
+            core_z = 0  # Center of core
+            print(f"  Adding iron core label at r={core_radius}, z={core_z} (solid)")
+            femm.mi_addblocklabel(core_radius, core_z)
+            femm.mi_selectlabel(core_radius, core_z)
+            femm.mi_setblockprop('Iron_Core', 1, 0, '', 0, 0, 0)
+            femm.mi_clearselected()
+
+        # Assign ONE air label for all air regions outside the core
+        # This includes: above/below core, between core and wires, and outside windings
+        # Place it in the outer region where it's guaranteed to be in air
+        air_region_radius = (self.config.winding_outer_radius + self.config.air_gap_radius) / 2
+        air_region_z = 0
+        print(f"  Adding single air label at r={air_region_radius}, z={air_region_z}")
+        femm.mi_addblocklabel(air_region_radius, air_region_z)
+        femm.mi_selectlabel(air_region_radius, air_region_z)
         femm.mi_setblockprop('Air', 1, 0, '', 0, 0, 0)
         femm.mi_clearselected()
-        
-        # Assign iron to core region
-        core_radius = (self.config.core_outer_radius + self.config.core_inner_radius) / 2
-        femm.mi_addblocklabel(core_radius, 0)
-        femm.mi_selectlabel(core_radius, 0)
-        femm.mi_setblockprop('Iron_Core', 1, 0, '', 0, 0, 0)
-        femm.mi_clearselected()
-        
-        # Assign air to inner core region
-        femm.mi_addblocklabel(self.config.core_inner_radius * 0.5, 0)
-        femm.mi_selectlabel(self.config.core_inner_radius * 0.5, 0)
-        femm.mi_setblockprop('Air', 1, 0, '', 0, 0, 0)
-        femm.mi_clearselected()
-        
-        # Assign copper and circuit properties to wires
+
+        # Assign copper and circuit properties to each individual wire
         from dxf_generator import DXFGenerator
         generator = DXFGenerator(self.config)
         wire_positions = generator.calculate_wire_positions()
-        
+
         turns_per_wire = self.circuit.turns / len(wire_positions)
-        
-        for i, (x, y) in enumerate(wire_positions):
-            femm.mi_addblocklabel(x, y)
-            femm.mi_selectlabel(x, y)
-            # Determine current direction (alternating for realistic winding)
-            direction = 1 if i % 2 == 0 else -1
+
+        for i, (r, z) in enumerate(wire_positions):
+            femm.mi_addblocklabel(r, z)
+            femm.mi_selectlabel(r, z)
+            # All wires carry current in same direction for solenoid
             femm.mi_setblockprop('Copper', 1, 0, self.circuit.circuit_name,
-                               0, 0, direction * turns_per_wire)
+                               0, 0, turns_per_wire)
             femm.mi_clearselected()
-            
-        print("Block properties assigned")
+
+        print(f"Block properties assigned: {len(wire_positions)} wires configured")
         
     def apply_boundary_conditions(self):
         """Apply boundary conditions"""
@@ -267,21 +305,24 @@ class FEMMSimulation:
             self.setup_problem()
             self.define_materials()
             self.define_circuit()
-            
+
             if dxf_filename and os.path.exists(dxf_filename):
                 self.import_geometry_from_dxf(dxf_filename)
             else:
+                print("Warning: No DXF file provided, creating geometry programmatically")
                 self.create_geometry_programmatically()
-                
+
             self.assign_block_properties()
             self.apply_boundary_conditions()
             self.create_mesh_and_solve()
-            
+
             print("Simulation completed successfully")
             return True
-            
+
         except Exception as e:
             print(f"Simulation failed: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return False
             
     def cleanup(self):
@@ -295,24 +336,26 @@ class FEMMSimulation:
 def create_default_simulation() -> FEMMSimulation:
     """Create a simulation with default parameters"""
     config = InductorConfig(
-        core_outer_radius=20.0,
-        core_inner_radius=8.0,
-        wire_diameter=0.8,
-        num_turns=40,
-        winding_inner_radius=8.5,
-        winding_outer_radius=19.5,
-        winding_height=25.0,
+        core_outer_radius=8.5,
+        core_inner_radius=0.0,
+        core_height=30.0,
+        wire_diameter=1.29,
+        num_turns=160,
+        wire_layers=9,
+        winding_inner_radius=8.55,
+        winding_outer_radius=16.0,
+        winding_height=29.0,
         air_gap_radius=50.0
     )
-    
+
     materials = MaterialProperties()
-    
+
     circuit = CircuitProperties(
         current_amplitude=1.0,
         circuit_name="MainCoil",
-        turns=40
+        turns=160
     )
-    
+
     return FEMMSimulation(config, materials, circuit)
 
 

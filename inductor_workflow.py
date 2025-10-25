@@ -33,18 +33,18 @@ class InductorWorkflow:
     def create_default_configuration(self):
         """Create default configuration for all components"""
         self.config = InductorConfig(
-            core_outer_radius=20.0,
-            core_inner_radius=8.0,
+            core_outer_radius=8.5,
+            core_inner_radius=0.0,
             core_height=30.0,
-            wire_diameter=0.8,
-            num_turns=40,
-            wire_layers=1,
-            winding_inner_radius=8.5,
-            winding_outer_radius=19.5,
-            winding_height=25.0,
+            wire_diameter=1.29,
+            num_turns=160,
+            wire_layers=9,
+            winding_inner_radius=8.55,
+            winding_outer_radius=16.0,
+            winding_height=29.0,
             air_gap_radius=50.0
         )
-        
+
         self.materials = MaterialProperties(
             iron_mu_r=4000.0,
             iron_h_c=0.0,
@@ -59,12 +59,12 @@ class InductorWorkflow:
             air_j=0.0,
             air_conductivity=0.0
         )
-        
+
         self.circuit = CircuitProperties(
             current_amplitude=1.0,
             frequency=0.0,
             circuit_name="MainCoil",
-            turns=40
+            turns=160
         )
     
     def load_configuration(self, config_file: str):
@@ -156,21 +156,20 @@ class InductorWorkflow:
         if self.simulation:
             self.simulation.cleanup()
     
-    def run_complete_workflow(self, generate_dxf: bool = True, 
+    def run_complete_workflow(self, generate_dxf: bool = True,
                              dxf_filename: str = "inductor.dxf") -> bool:
         """Run the complete simulation workflow"""
         success = True
-        
+
         try:
             # Step 1: Generate DXF geometry
             if generate_dxf:
                 if not self.generate_geometry(dxf_filename):
                     print("Failed to generate DXF geometry")
                     return False
-            
-            # Step 2: Run FEMM simulation
-            dxf_file = dxf_filename if generate_dxf else None
-            if not self.run_simulation(dxf_file):
+
+            # Step 2: Run FEMM simulation with DXF import
+            if not self.run_simulation(dxf_filename):
                 print("Failed to run simulation")
                 return False
             
@@ -196,8 +195,13 @@ class InductorWorkflow:
     def print_configuration_summary(self):
         """Print current configuration summary"""
         print("=== Configuration Summary ===")
-        print(f"Core: {self.config.core_inner_radius}-{self.config.core_outer_radius}mm radius")
+        if self.config.core_inner_radius > 0:
+            print(f"Core: {self.config.core_inner_radius}-{self.config.core_outer_radius}mm radius (hollow)")
+        else:
+            print(f"Core: {self.config.core_outer_radius}mm radius (solid rod)")
+        print(f"Core height: {self.config.core_height}mm")
         print(f"Wire: {self.config.wire_diameter}mm diameter, {self.config.num_turns} turns")
+        print(f"Winding region: r={self.config.winding_inner_radius}-{self.config.winding_outer_radius}mm")
         print(f"Current: {self.circuit.current_amplitude}A")
         print(f"Frequency: {self.circuit.frequency}Hz")
         print(f"Iron permeability: {self.materials.iron_mu_r}")

@@ -98,48 +98,53 @@ class MagneticAnalyzer:
             flux_densities = []
             core_flux_densities = []
             n_samples = 100
-            
-            # Sample points in a grid
-            x_range = np.linspace(-self.config.air_gap_radius*0.8, 
+
+            # Sample points in r-z plane for axisymmetric geometry
+            r_range = np.linspace(0, self.config.air_gap_radius*0.8, n_samples)
+            z_range = np.linspace(-self.config.air_gap_radius*0.8,
                                 self.config.air_gap_radius*0.8, n_samples)
-            y_range = np.linspace(-self.config.air_gap_radius*0.8, 
-                                self.config.air_gap_radius*0.8, n_samples)
-            
-            field_map = {'x': [], 'y': [], 'Bx': [], 'By': [], 'B_mag': []}
-            
-            for x in x_range:
-                for y in y_range:
-                    field_data = femm.mo_getpointvalues(x, y)
+
+            field_map = {'r': [], 'z': [], 'Br': [], 'Bz': [], 'B_mag': []}
+
+            for r in r_range:
+                for z in z_range:
+                    field_data = femm.mo_getpointvalues(r, z)
                     if field_data is not None:
-                        bx, by = field_data[1], field_data[2]
-                        b_magnitude = math.sqrt(bx**2 + by**2)
-                        
-                        field_map['x'].append(x)
-                        field_map['y'].append(y)
-                        field_map['Bx'].append(bx)
-                        field_map['By'].append(by)
+                        br, bz = field_data[1], field_data[2]
+                        b_magnitude = math.sqrt(br**2 + bz**2)
+
+                        field_map['r'].append(r)
+                        field_map['z'].append(z)
+                        field_map['Br'].append(br)
+                        field_map['Bz'].append(bz)
                         field_map['B_mag'].append(b_magnitude)
-                        
+
                         flux_densities.append(b_magnitude)
-                        
-                        # Check if point is in iron core
-                        radius = math.sqrt(x**2 + y**2)
-                        if (self.config.core_inner_radius < radius < 
-                            self.config.core_outer_radius):
-                            core_flux_densities.append(b_magnitude)
-            
+
+                        # Check if point is in iron core (axisymmetric)
+                        # Core extends from core_inner_radius to core_outer_radius
+                        if abs(z) <= self.config.core_height / 2:
+                            if self.config.core_inner_radius > 0:
+                                # Hollow core
+                                if self.config.core_inner_radius < r < self.config.core_outer_radius:
+                                    core_flux_densities.append(b_magnitude)
+                            else:
+                                # Solid core
+                                if r <= self.config.core_outer_radius:
+                                    core_flux_densities.append(b_magnitude)
+
             max_flux = max(flux_densities) if flux_densities else 0.0
             avg_core_flux = np.mean(core_flux_densities) if core_flux_densities else 0.0
-            
+
             self.results.max_flux_density = max_flux
             self.results.avg_flux_density_core = avg_core_flux
             self.results.field_data = field_map
-            
+
             print(f"Maximum flux density: {max_flux:.3f} T")
             print(f"Average core flux density: {avg_core_flux:.3f} T")
-            
+
             return field_map
-            
+
         except Exception as e:
             print(f"Error analyzing flux density: {e}")
             return {}
@@ -175,14 +180,21 @@ class MagneticAnalyzer:
                 k = 0.01  # Material constant
                 alpha = 1.5  # Frequency exponent
                 beta = 2.0  # Flux density exponent
-                
-                core_volume = (math.pi * (self.config.core_outer_radius**2 - 
-                              self.config.core_inner_radius**2) * 
-                              self.config.core_height * 1e-9)  # m³
-                
+
+                # Calculate core volume for solid or hollow cylinder
+                if self.config.core_inner_radius > 0:
+                    # Hollow core
+                    core_volume = (math.pi * (self.config.core_outer_radius**2 -
+                                  self.config.core_inner_radius**2) *
+                                  self.config.core_height * 1e-9)  # m³
+                else:
+                    # Solid core
+                    core_volume = (math.pi * self.config.core_outer_radius**2 *
+                                  self.config.core_height * 1e-9)  # m³
+
                 if self.circuit.frequency > 0:
-                    core_losses = (k * (self.circuit.frequency**alpha) * 
-                                 (self.results.avg_flux_density_core**beta) * 
+                    core_losses = (k * (self.circuit.frequency**alpha) *
+                                 (self.results.avg_flux_density_core**beta) *
                                  core_volume)
                 else:
                     core_losses = 0.0  # No hysteresis losses for DC
@@ -200,91 +212,96 @@ class MagneticAnalyzer:
             return 0.0, 0.0
     
     def plot_field_distribution(self, save_plots: bool = True):
-        """Create plots of magnetic field distribution"""
+        """Create plots of magnetic field distribution (axisymmetric)"""
         if self.results.field_data is None:
             print("No field data available for plotting")
             return
-            
+
         try:
             fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(12, 10))
-            
-            x = np.array(self.results.field_data['x'])
-            y = np.array(self.results.field_data['y'])
-            bx = np.array(self.results.field_data['Bx'])
-            by = np.array(self.results.field_data['By'])
+
+            r = np.array(self.results.field_data['r'])
+            z = np.array(self.results.field_data['z'])
+            br = np.array(self.results.field_data['Br'])
+            bz = np.array(self.results.field_data['Bz'])
             b_mag = np.array(self.results.field_data['B_mag'])
-            
+
             # Reshape for contour plots
-            n_points = int(math.sqrt(len(x)))
-            X = x.reshape(n_points, n_points)
-            Y = y.reshape(n_points, n_points)
-            Bx = bx.reshape(n_points, n_points)
-            By = by.reshape(n_points, n_points)
+            n_points = int(math.sqrt(len(r)))
+            R = r.reshape(n_points, n_points)
+            Z = z.reshape(n_points, n_points)
+            Br = br.reshape(n_points, n_points)
+            Bz = bz.reshape(n_points, n_points)
             B_mag = b_mag.reshape(n_points, n_points)
-            
+
             # Plot 1: Flux density magnitude
-            contour1 = ax1.contourf(X, Y, B_mag, levels=20, cmap='viridis')
-            ax1.set_title('Flux Density Magnitude (T)')
-            ax1.set_xlabel('X (mm)')
-            ax1.set_ylabel('Y (mm)')
+            contour1 = ax1.contourf(R, Z, B_mag, levels=20, cmap='viridis')
+            ax1.set_title('Flux Density Magnitude (T) - Axisymmetric')
+            ax1.set_xlabel('r (mm)')
+            ax1.set_ylabel('z (mm)')
             plt.colorbar(contour1, ax=ax1)
-            
-            # Add core outline
-            theta = np.linspace(0, 2*np.pi, 100)
-            core_outer_x = self.config.core_outer_radius * np.cos(theta)
-            core_outer_y = self.config.core_outer_radius * np.sin(theta)
-            core_inner_x = self.config.core_inner_radius * np.cos(theta)
-            core_inner_y = self.config.core_inner_radius * np.sin(theta)
-            
-            ax1.plot(core_outer_x, core_outer_y, 'w-', linewidth=2, label='Core Outer')
-            ax1.plot(core_inner_x, core_inner_y, 'w-', linewidth=2, label='Core Inner')
-            
+
+            # Add core outline (rectangle for axisymmetric view)
+            half_height = self.config.core_height / 2
+            if self.config.core_inner_radius > 0:
+                # Hollow core
+                ax1.add_patch(plt.Rectangle(
+                    (self.config.core_inner_radius, -half_height),
+                    self.config.core_outer_radius - self.config.core_inner_radius,
+                    self.config.core_height,
+                    fill=False, edgecolor='white', linewidth=2))
+            else:
+                # Solid core
+                ax1.add_patch(plt.Rectangle(
+                    (0, -half_height),
+                    self.config.core_outer_radius,
+                    self.config.core_height,
+                    fill=False, edgecolor='white', linewidth=2))
+
             # Plot 2: Flux density vectors
             skip = 5  # Plot every 5th vector for clarity
-            ax2.quiver(X[::skip, ::skip], Y[::skip, ::skip], 
-                      Bx[::skip, ::skip], By[::skip, ::skip],
+            ax2.quiver(R[::skip, ::skip], Z[::skip, ::skip],
+                      Br[::skip, ::skip], Bz[::skip, ::skip],
                       B_mag[::skip, ::skip], cmap='plasma')
             ax2.set_title('Flux Density Vectors')
-            ax2.set_xlabel('X (mm)')
-            ax2.set_ylabel('Y (mm)')
-            ax2.plot(core_outer_x, core_outer_y, 'k-', linewidth=1)
-            ax2.plot(core_inner_x, core_inner_y, 'k-', linewidth=1)
-            
-            # Plot 3: Radial flux density distribution
-            center_idx = n_points // 2
-            radial_distances = X[center_idx, center_idx:]
-            radial_flux = B_mag[center_idx, center_idx:]
-            
+            ax2.set_xlabel('r (mm)')
+            ax2.set_ylabel('z (mm)')
+
+            # Plot 3: Radial flux density distribution at z=0
+            # Find indices where z is closest to 0
+            z_center_idx = np.argmin(np.abs(Z[:, 0]))
+            radial_distances = R[z_center_idx, :]
+            radial_flux = B_mag[z_center_idx, :]
+
             ax3.plot(radial_distances, radial_flux, 'b-', linewidth=2)
-            ax3.axvline(self.config.core_inner_radius, color='r', linestyle='--', 
-                       label='Core Inner')
-            ax3.axvline(self.config.core_outer_radius, color='r', linestyle='--', 
+            if self.config.core_inner_radius > 0:
+                ax3.axvline(self.config.core_inner_radius, color='r', linestyle='--',
+                           label='Core Inner')
+            ax3.axvline(self.config.core_outer_radius, color='r', linestyle='--',
                        label='Core Outer')
-            ax3.set_title('Radial Flux Density Distribution')
-            ax3.set_xlabel('Radius (mm)')
+            ax3.set_title('Radial Flux Density Distribution (z=0)')
+            ax3.set_xlabel('Radius r (mm)')
             ax3.set_ylabel('Flux Density (T)')
             ax3.legend()
             ax3.grid(True)
-            
+
             # Plot 4: Energy density distribution
             mu0 = 4 * math.pi * 1e-7
             energy_density = B_mag**2 / (2 * mu0)
-            contour4 = ax4.contourf(X, Y, energy_density, levels=20, cmap='hot')
+            contour4 = ax4.contourf(R, Z, energy_density, levels=20, cmap='hot')
             ax4.set_title('Energy Density (J/m³)')
-            ax4.set_xlabel('X (mm)')
-            ax4.set_ylabel('Y (mm)')
+            ax4.set_xlabel('r (mm)')
+            ax4.set_ylabel('z (mm)')
             plt.colorbar(contour4, ax=ax4)
-            ax4.plot(core_outer_x, core_outer_y, 'w-', linewidth=1)
-            ax4.plot(core_inner_x, core_inner_y, 'w-', linewidth=1)
-            
+
             plt.tight_layout()
-            
+
             if save_plots:
                 plt.savefig('inductor_field_analysis.png', dpi=300, bbox_inches='tight')
                 print("Field analysis plots saved as 'inductor_field_analysis.png'")
-            
+
             plt.show()
-            
+
         except Exception as e:
             print(f"Error creating plots: {e}")
     
