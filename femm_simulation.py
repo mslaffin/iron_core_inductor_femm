@@ -63,36 +63,22 @@ class FEMMSimulation:
     def setup_problem(self):
         """Setup magnetostatic problem"""
         femm.newdocument(0)  # New magnetostatic document
-        
+
         # Problem definition
         femm.mi_probdef(
             self.circuit.frequency,  # Frequency
             'millimeters',           # Length units
-            'planar',               # Problem type (planar/axisymmetric)
+            'axi',                  # Problem type (axisymmetric)
             1e-8,                   # Precision
-            0,                      # Depth (for planar problems)
-            30,                      # Min angle for meshing
-            'axi'                   # axisymmetric coordinates
+            0,                      # Depth (not used for axisymmetric)
+            30                      # Min angle for meshing
         )
-        
-        print("Problem setup completed")
+
+        print("Problem setup completed (axisymmetric)")
         
     def define_materials(self):
         """Define all materials used in simulation"""
-        # Define iron core material
-        femm.mi_addmaterial(
-            'Iron_Core',
-            self.materials.iron_mu_r,
-            self.materials.iron_mu_r,  # mu_x and mu_y (isotropic)
-            self.materials.iron_h_c,
-            self.materials.iron_j,
-            self.materials.iron_conductivity,
-            0,  # Hysteresis lag angle
-            0,  # Lamination thickness
-            1,  # Lamination fill factor
-            0,  # Wire type (0=solid)
-            0   # Stranding type
-        )
+        femm.mi_getmaterial('Soft magnetic ferrite (Fe-Ni-Zn-V)')
         
         # Define copper wire material
         femm.mi_addmaterial(
@@ -198,7 +184,7 @@ class FEMMSimulation:
             print(f"  Adding iron core label at r={core_radius}, z={core_z} (hollow)")
             femm.mi_addblocklabel(core_radius, core_z)
             femm.mi_selectlabel(core_radius, core_z)
-            femm.mi_setblockprop('Iron_Core', 1, 0, '', 0, 0, 0)
+            femm.mi_setblockprop('Soft magnetic ferrite (Fe-Ni-Zn-V)', 1, 0, '', 0, 0, 0)
             femm.mi_clearselected()
 
             # Assign air to inner core region (this is a separate region)
@@ -216,7 +202,7 @@ class FEMMSimulation:
             print(f"  Adding iron core label at r={core_radius}, z={core_z} (solid)")
             femm.mi_addblocklabel(core_radius, core_z)
             femm.mi_selectlabel(core_radius, core_z)
-            femm.mi_setblockprop('Iron_Core', 1, 0, '', 0, 0, 0)
+            femm.mi_setblockprop('Soft magnetic ferrite (Fe-Ni-Zn-V)', 1, 0, '', 0, 0, 0)
             femm.mi_clearselected()
 
         # Assign ONE air label for all air regions outside the core
@@ -373,4 +359,5 @@ if __name__ == "__main__":
             print("Simulation failed")
             
     finally:
-        sim.cleanup()
+        # sim.cleanup()
+        pass

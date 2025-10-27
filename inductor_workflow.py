@@ -6,12 +6,12 @@ Main automation script that integrates DXF generation, FEMM simulation, and anal
 import os
 import sys
 import argparse
-from typing import Optional, Dict, Any
+from typing import Optional
 import json
 
 from dxf_generator import InductorConfig, DXFGenerator
 from femm_simulation import FEMMSimulation, MaterialProperties, CircuitProperties
-from analysis_tools import MagneticAnalyzer, AnalysisResults
+from analysis_tools import MagneticAnalyzer
 
 
 class InductorWorkflow:
@@ -37,10 +37,10 @@ class InductorWorkflow:
             core_inner_radius=0.0,
             core_height=30.0,
             wire_diameter=1.29,
-            num_turns=160,
+            num_turns=264,
             wire_layers=9,
             winding_inner_radius=8.55,
-            winding_outer_radius=16.0,
+            winding_outer_radius=32.0,
             winding_height=29.0,
             air_gap_radius=50.0
         )
@@ -61,7 +61,7 @@ class InductorWorkflow:
         )
 
         self.circuit = CircuitProperties(
-            current_amplitude=1.0,
+            current_amplitude=10.0,
             frequency=0.0,
             circuit_name="MainCoil",
             turns=160

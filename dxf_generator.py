@@ -188,7 +188,6 @@ class DXFGenerator:
         self.add_air_boundary()
         self.add_iron_core()
         self.add_wire_cross_sections()
-        # self.add_construction_lines()  # Commented out - causes issues in FEMM
 
         self.doc.saveas(filename)
         print(f"DXF file saved as: {filename}")
@@ -211,10 +210,10 @@ def create_sample_inductor():
         core_inner_radius=0.0,       # Solid rod (no hole)
         core_height=30.0,            # Rod length
         wire_diameter=1.29,
-        num_turns=264,
-        wire_layers=9,
+        num_turns=418,
+        wire_layers=16,
         winding_inner_radius=8.55,      # Just outside the core
-        winding_outer_radius=32.0,    # Outer edge of windings
+        winding_outer_radius=120.0,    # Outer edge of windings
         winding_height=29.0,
         air_gap_radius=50.0
     )
